@@ -1,0 +1,117 @@
+---
+
+- name: Permit tunneled clear text passwords Authentications
+  become: true
+  replace:
+    dest: /etc/ssh/sshd_config
+    regexp: 'PasswordAuthentication no'
+    replace: 'PasswordAuthentication yes'
+  notify: Restart_SSHD
+
+- name: Install required tools on Linux to Integrate with AD
+  become: true
+  yum:
+    name: "{{item}}"
+    state: present
+  with_items:
+  - realmd 
+  - sssd 
+  - krb5-workstation 
+  - krb5-libs
+  - samba-common-tools
+  notify: Reboot_Server
+
+- name: Remove the Conntrack Kernel Module
+  become: true
+  kernel_blacklist:
+    name: nf_conntrack
+    state: present
+  notify: Reboot_Server
+
+- name: Settings for Conntrack Kernel Module to not load with next reboot
+  become: true
+  lineinfile:
+    path: /etc/modprobe.d/blacklist-ansible.conf
+    line: 'install nf_conntrack /bin/false'
+    state: present
+  notify: Reboot_Server
+
+- meta: flush_handlers
+
+- meta: flush_handlers
+
+- name: Check if machine is bound
+  become: true
+  shell: 'realm list | grep sssd || true'
+  register: realmd_bound
+  changed_when: false
+
+- name: Initalize Kerberos with the Admin User
+  become: true
+  shell: "echo  '{{ hostvars['localhost']['domain_join_user']['value']['password'] }}'|kinit {{ hostvars['localhost']['domain_join_user']['value']['username'] }}@REYESHOLDINGS.COM"
+  when: realmd_bound.stdout == ""
+
+- name: Join the Instance to Domain
+  become: true
+  shell: "echo  '{{ hostvars['localhost']['domain_join_user']['value']['password'] }}'|realm join --computer-ou='OU=Servers,OU=US,OU=Martin Brower,DC=reyesholdings,DC=com' --verbose REYESHOLDINGS.COM -U {{ hostvars['localhost']['domain_join_user']['value']['username'] }}@REYESHOLDINGS.COM"
+  when: realmd_bound.stdout == ""
+
+- name: Remove Multiple DC's 
+  become: true
+  lineinfile:
+    path: /etc/sssd/sssd.conf
+    state: absent
+    line: 'ad_server = spdc03.reyesholdings.com, spdc01.reyesholdings.com, spdc20.reyesholdings.com, spdc21.reyesholdings.com'
+
+- name: SSSD to route the Linux clients AD lookups & Auth to a specific Domain Controller
+  become: true
+  lineinfile:
+    path: /etc/sssd/sssd.conf
+    state: absent
+    line: 'ad_server = spdc01.reyesholdings.com'
+  notify: Restart_SSSD
+
+- name: SSSD to route the Linux clients AD lookups & Auth to a specific Domain Controller
+  become: true
+  lineinfile:
+    path: /etc/sssd/sssd.conf
+    state: present
+    line: 'ad_server = spdc03.reyesholdings.com'
+  notify: Restart_SSSD
+
+- name: Removing the FQDN Settings for AD Auth
+  become: true
+  replace:
+    path: "{{ item.path }}"
+    regexp: "{{ item.regexp1 }}"
+    replace: "{{ item.replace }}"
+  with_items:
+    - { path: '/etc/sssd/sssd.conf', regexp1: 'use_fully_qualified_names = True', replace: 'use_fully_qualified_names = False'}
+    - { path: '/etc/sssd/sssd.conf', regexp1: 'fallback_homedir = /home/%u@%d', replace: 'fallback_homedir = /home/%u'}
+  notify: Restart_SSSD
+
+- name: Setting Kerberos Config as per cloudera requirements
+  become: true
+  copy:
+    src: ./files/krb5.conf
+    dest: /etc/krb5.conf
+    owner: root
+    group: root
+    mode: 0644
+  notify: Restart_SSSD
+
+- name: Adding the Group to Sudoers for Admin Access
+  become: true
+  lineinfile:
+    dest: /etc/sudoers
+    line: '%REYESHOLDINGS.COM\\mb_bi_cloud_admins ALL=(ALL) NOPASSWD: ALL'
+    insertafter: '^%wheel'
+    validate: '/usr/sbin/visudo -cf %s'
+
+- name: Adding the Group to Sudoers for access to gdp admin Access
+  become: true
+  lineinfile:
+    dest: /etc/sudoers
+    line: '%REYESHOLDINGS.COM\\mb_gdp_admin ALL=(ALL) /bin/su - mb-hdpp-gdp-admin'
+    insertafter: '^%wheel'
+    validate: '/usr/sbin/visudo -cf %s'
