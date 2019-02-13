@@ -1,0 +1,27 @@
+---
+
+- name: Deploy Spark on yarn service
+  cdh: 
+    action: deploy_service 
+    name: yarnspark
+  notify:
+     - restart spark
+
+- name: Set spark service properties
+  cdh: 
+    action: set_config 
+    entity: service 
+    service: yarnspark 
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'yarn_service', value: 'YARN' }
+    - { name: 'spark_jar_hdfs_path', value: '/user/spark/share/lib/spark-assembly.jar' }
+
+- name: Deploy spark on yarn components
+  cdh: 
+    action: deploy_base_roles 
+    service: yarnspark 
+    host: "{{ groups['cloudera-master'][0] }}"
+
+- meta: flush_handlers

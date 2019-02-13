@@ -1,0 +1,84 @@
+---
+
+- name: Deploy YARN Node Manager
+  cdh: 
+    action: deploy_service_worker_nodes 
+    service: yarn 
+    host: "{{ item }}"
+  with_items: "{{ groups['cloudera-worker'] }}"
+
+- name: Set YARN service properties
+  cdh: 
+    action: set_config 
+    entity: service 
+    service: yarn 
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'hdfs_service', value: 'HDFS' }
+    - { name: 'yarn_service_config_safety_valve', value: '<property><name>yarn.nodemanager.aux-services</name><value>spark_shuffle,mapreduce_shuffle</value></property><property><name>yarn.nodemanager.aux-services.spark_shuffle.class</name><value>org.apache.spark.network.yarn.YarnShuffleService</value></property>' }
+    - { name: 'yarn_admin_acl', value: 'mapred,yarn' }
+
+- name: Set YARN Resource Manager role properties
+  cdh: 
+    action: set_config 
+    entity: role 
+    service: yarn 
+    role: resourcemanager 
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'resourcemanager_fair_scheduler_user_as_default_queue', value: 'false' }
+
+- name: Set YARN Node Manager role properties
+  cdh: 
+    action: set_config 
+    entity: role 
+    service: yarn 
+    role: nodemanager 
+    name: "{{ item.name }}" 
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'yarn_nodemanager_local_dirs', value: "{{ dfs_nm_dirs }}"     }
+    - { name: 'yarn_nodemanager_log_dirs',   value: "{{ dfs_nm_log_dirs }}" }
+
+- name: Deploy YARN master components
+  cdh: 
+    action: deploy_base_roles 
+    service: yarn 
+    host: "{{ groups['cloudera-master'][0] }}"
+  notify:
+      - restart yarn
+    
+- name: Create /var/lib/hadoop-yarn  and set permissions 
+  file: 
+    path: /var/lib/hadoop-yarn 
+    state: directory
+    owner: yarn
+    group: hadoop
+    mode: 0755
+  delegate_to: "{{ item }}"
+  with_items: 
+    - "{{ groups['cloudera-master'] }}"
+    - "{{ groups['cloudera-worker'] }}"
+    
+- name: Create /var/lib/hadoop-mapreduce  and set permissions 
+  file: 
+    path: /var/lib/hadoop-mapreduce 
+    state: directory
+    owner: mapred
+    group: hadoop
+    mode: 0755
+  delegate_to: "{{ item }}"
+  with_items: 
+    - "{{ groups['cloudera-master'] }}"
+    - "{{ groups['cloudera-worker'] }}"
+
+- name: Enable YARM RM HA 
+  cdh: 
+    action: deploy_rm_ha 
+    sn_host: "{{ groups['cloudera-master'][1] }}"
+  notify:
+      - restart yarn
+
+- meta: flush_handlers

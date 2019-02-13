@@ -1,0 +1,39 @@
+---
+
+- name: Get the hostname
+  shell: hostname -f
+  register: host_name
+
+- name: Set hostname -f to include FQDN
+  shell: "sudo hostnamectl set-hostname {{ host_name.stdout }}.reyesholdings.com"
+  when: not host_name.stdout | regex_search('.reyesholdings.com')
+
+- name: Configure Yum repo for CM
+  template: 
+    src: cmrepo.j2 
+    dest: /etc/yum.repos.d/{{ item.key }}.repo
+  with_dict: "{{ yum_repos }}"
+
+- name: Install epel-release
+  yum:
+    name: https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+    state: latest
+  ignore_errors: True
+
+- name: Install CM agent
+  yum: 
+    pkg: "{{ item }}"
+    state: latest
+    skip_broken: true
+  with_items: "{{ cm_agent_packages }}"
+  
+- name: Replace server_host in CM agent config
+  replace: 
+    dest: /etc/cloudera-scm-agent/config.ini 
+    regexp: '(server_host)=localhost' 
+    replace: "\\1={{ cdh_cm_host }}"
+    
+- name: Start cloudera agent
+  service: 
+    name: cloudera-scm-agent 
+    state: started

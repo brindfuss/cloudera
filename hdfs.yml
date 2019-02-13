@@ -1,0 +1,138 @@
+---
+
+- name: Deploy hdfs on slave nodes
+  cdh: 
+    action: deploy_service_worker_nodes 
+    service: hdfs 
+    host: "{{ item }}"
+  with_items: "{{ groups['cloudera-worker'] }}"
+
+- name: Set hdfs service properties (TBD)
+  cdh: 
+    action: set_config 
+    entity: service 
+    service: hdfs 
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'dfs_replication', value: 3 }
+    - { name: 'dfs_permissions', value: 'true' }
+    - { name: 'dfs_block_local_path_access_user', value: 'impala,hbase,mapred,spark' }
+    - { name: 'hue_kerberos_principal_shortname', value: 'hue' }
+    - { name: 'dfs_namenode_acls_enabled', value: 'true' }
+    - { name: 'core_site_safety_valve', value: '<property><name>hadoop.security.groups.cache.secs</name><value>1</value></property><property><name>hadoop.http.staticuser.user</name><value>mapred</value></property>' }
+    - { name: 'hdfs_service_config_safety_valve', value: '<property><name>dfs.web.ugi</name><value>hdfs</value></property><property><name>dfs.namenode.fs-limits.max-component-length</name><value>4096</value></property><property><name>dfs.namenode.datanode.registration.ip-hostname-check</name><value>false</value></property>' }
+    
+- name: Set Journalnode user and group
+  shell: sudo chown -R hdfs:hadoop /jn
+  ignore_errors: True
+  delegate_to: "{{ item }}"
+  with_items: "{{ groups['cloudera-master'] }}"
+
+- name: set journalnode permissions
+  shell: sudo chmod -R 750 /jn
+  ignore_errors: True
+  delegate_to: "{{ item }}"
+  with_items: "{{ groups['cloudera-master'] }}"
+
+- name: Set namenode role properties
+  cdh: 
+    action: set_config 
+    entity: role 
+    service: hdfs 
+    role: namenode 
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'dfs_name_dir_list', value: "{{ dfs_nn_dirs }}" }
+    - { name: 'dfs_namenode_handler_count', value: 30 }
+
+- name: Set 2ndary namenode role properties
+  cdh: 
+    action: set_config 
+    entity: role 
+    service: hdfs 
+    role: secondarynamenode
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'fs_checkpoint_dir_list', value: "{{ dfs_snn_dirs }}" }
+
+# Issue: NameNode might not be formatted. Had to format using UI
+- name: Deploy hdfs namenode and secondary namenode
+  cdh: 
+    action: deploy_hdfs_base 
+    nn_host: "{{ groups['cloudera-master'][0] }}"
+    sn_host: "{{ groups['cloudera-master'][1] }}"
+  notify: 
+    - restart hdfs
+
+- name: Set hdfs role properties
+  cdh: 
+    action: set_config 
+    entity: role 
+    service: hdfs 
+    role: datanode 
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'dfs_data_dir_list', value: "{{ dfs_dn_dirs }}" }
+    - { name: 'dfs_datanode_handler_count', value: 30 }
+    - { name: 'dfs_datanode_du_reserved', value: 1073741824 }
+    - { name: 'dfs_datanode_data_dir_perm', value: '700' }
+  #  - { name: 'dfs_client_use_trash', value: 'true'}
+  
+- name: Create /var/lib/hadoop-hdfs and set permissions 
+  file: 
+    path: /var/lib/hadoop-hdfs
+    state: directory
+    owner: hdfs
+    group: hadoop
+    mode: 0755
+  delegate_to: "{{ item }}"
+  with_items: 
+    - "{{ groups['cloudera-master'] }}"
+    - "{{ groups['cloudera-worker'] }}"
+
+- name: Create /var/lib/hadoop-httpfs and set permissions 
+  file: 
+    path: /var/lib/hadoop-httpfs
+    state: directory
+    owner: httpfs
+    group: hadoop
+    mode: 0755
+  delegate_to: "{{ item }}"
+  with_items: 
+    - "{{ groups['cloudera-master'] }}"
+    - "{{ groups['cloudera-worker'] }}"
+
+- meta: flush_handlers  
+
+- pause: seconds=30
+
+- name: Enable HDFS HA 
+  cdh: 
+    action: deploy_hdfs_ha 
+    sn_host:  "{{ groups['cloudera-master'][1] }}"
+    jn1_host: "{{ groups['cloudera-master'][0] }}"
+    jn2_host: "{{ groups['cloudera-master'][1] }}" 
+    jn3_host: "{{ groups['cloudera-master'][2] }}" 
+    jn_dir: "{{ dfs_jn_dirs }}"
+
+- pause: seconds=90
+
+- name: Install HTTPFS
+  cdh: 
+    action: deploy_hdfs_httpfs 
+    host: "{{ groups['cloudera-master'][1] }}"
+  notify: 
+    - restart hdfs
+
+- name: create dirs on hadoop
+  hdfs: dir={{ item.dir }} owner={{ item.owner }} mode={{ item.mode }} group={{ item.group }}
+  with_items:
+    - { dir: '/tmp', owner: 'hdfs', group: 'supergroup', mode: '1777' }
+    - { dir: '/user', owner: 'hdfs', group: 'supergroup', mode: '777' }
+  ignore_errors: yes
+  async: 30
+  poll: 30  

@@ -1,0 +1,93 @@
+---
+
+- name: Deploy SENTRY base roles
+  cdh: 
+    action: deploy_base_roles 
+    service: sentry 
+    host: "{{ groups['cloudera-master'][1] }}"
+  register: sentry_deployed
+  notify:
+      - restart sentry 
+ 
+- name: Set SENTRY server role properties
+  cdh: 
+    action: set_config 
+    entity: service 
+    service: sentry 
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'hdfs_service', value: 'HDFS' }
+    - { name: 'zookeeper_service', value: 'ZOOKEEPER' }
+    - { name: 'sentry_server_database_type', value: "{{ db_type }}" }
+    - { name: 'sentry_server_database_host', value: "{{ cdh_serv_db_host }}" }
+    - { name: 'sentry_server_database_name', value: "{{ hostvars['localhost']['cdh_db_sentry']['value']['database'] }}"}
+    - { name: 'sentry_server_database_port', value: "5432" }
+    - { name: 'sentry_server_database_user', value: "{{ hostvars['localhost']['cdh_db_sentry']['value']['username'] }}" }
+    - { name: 'sentry_server_database_password', value: "{{ hostvars['localhost']['cdh_db_sentry']['value']['password'] }}" }
+    - { name: 'sentry_server_config_safety_valve', value: '<property><name>sentry.hdfs.integration.path.prefixes</name><value>/user/hive/warehouse</value></property>' }
+
+- name: Create Sentry database
+  cdh: 
+    action: run_command 
+    service: sentry 
+    name: SentryCreateDbTables
+  when: sentry_deployed|changed
+
+- name: Enable SENTRY service in HDFS
+  cdh: 
+    action: set_config 
+    entity: service 
+    service: hdfs 
+    name: "{{ item.name }}" 
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'hdfs_sentry_sync_enable', value: 'true' }
+    - { name: 'hdfs_sentry_sync_path_prefixes', value: '/user/hive/warehouse' }
+    
+- name: Enable SENTRY service in HIVE
+  cdh: 
+    action: set_config 
+    entity: service 
+    service: hive 
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'sentry_service', value: 'SENTRY' }
+    - { name: 'hive_service_config_safety_valve', value: '<property><name>sentry.hdfs.integration.path.prefixes</name><value>/user/hive/warehouse</value></property>' }
+    
+- name: Disable HIVE impersonation doAS
+  cdh: 
+    action: set_config 
+    entity: role 
+    service: hive 
+    role: hiveserver2 
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'hiveserver2_enable_impersonation', value: 'false' }
+    
+- name: Set YARN nodemanager service properties for superusers
+  cdh: 
+    action: set_config 
+    entity: role 
+    service: yarn 
+    role: nodemanager 
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'container_executor_min_user_id', value: '0' }
+    
+- name: Set HUE server role properties for SENTRY
+  cdh: 
+    action: set_config 
+    entity: service 
+    service: hue 
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'sentry_service', value: 'SENTRY' }
+
+- meta: flush_handlers
+
+- pause: seconds=30

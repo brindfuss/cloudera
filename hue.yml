@@ -1,0 +1,30 @@
+---
+
+- name: Deploy HUE master components
+  cdh: 
+    action: deploy_base_roles 
+    service: hue 
+    host: "{{ groups['cloudera-master'][0] }}"
+  notify:
+      - restart hue
+
+- name: Set HUE server role properties
+  cdh: 
+    action: set_config 
+    entity: service 
+    service: hue 
+    name: "{{ item.name }}" 
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'hive_service', value: 'HIVE' }
+    - { name: 'oozie_service', value: 'OOZIE' }
+    - { name: 'hue_webhdfs', value: 'HDFS-HTTPFS-1' }
+    - { name: 'database_host', value: "{{ cdh_serv_db_host }}" }
+    - { name: 'database_password', value: "{{ hostvars['localhost']['cdh_db_hue']['value']['password'] }}" }
+    - { name: 'database_name', value: "{{ hostvars['localhost']['cdh_db_hue']['value']['database'] }}" }
+    - { name: 'database_user', value: "{{ hostvars['localhost']['cdh_db_hue']['value']['username'] }}" }
+    - { name: 'database_type', value: "{{ db_type }}" }
+
+- meta: flush_handlers
+
+- pause: seconds=30

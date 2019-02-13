@@ -1,0 +1,45 @@
+---
+
+- name: Install PIP on postgres server
+  easy_install:
+   name: pip
+   state: latest
+
+- name: Install python libraries on postgres server
+  pip:
+    name: psycopg2, psycopg2-binary, pyyaml
+
+- name: Install KAZOO 
+  pip:
+    name: kazoo
+    state: present  
+
+- name: Install postgresql client
+  yum:
+    name: postgresql
+    state: present
+
+- name: Install CMI
+  pip:
+    name: cm-api
+    state: latest  
+  ignore_errors: yes
+
+- name: ensure cm api is present
+  shell: pip list | grep -w "cm-api"
+  ignore_errors: yes
+  register: cm_api_status
+
+- name: Install CMI
+  pip:
+    name: cm-api
+    state: latest
+  when: cm_api_status.rc == 1
+
+- name: Install CM server
+  yum: 
+    pkg: "{{ item }}" 
+    state: latest
+  with_items: "{{ cm_server_packages }}"
+  notify: Start SCM Server
+

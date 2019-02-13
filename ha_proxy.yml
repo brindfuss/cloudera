@@ -1,0 +1,14 @@
+---
+
+- name: install haproxy
+  yum: 
+     name: haproxy 
+     state: latest
+  notify: restart haproxy
+
+- name: Configure haproxy
+  copy:
+    src: haproxy.cfg
+    dest: /etc/haproxy/haproxy.cfg
+  become: yes
+  notify: restart haproxy

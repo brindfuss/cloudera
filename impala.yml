@@ -1,0 +1,57 @@
+---
+
+- name: Deploy IMPALA service
+  cdh: 
+    action: deploy_service 
+    name: impala
+  notify:
+     - restart impala
+
+- name: Set IMPALA service properties
+  cdh: 
+    action: set_config 
+    entity: service 
+    service: impala
+    name: "{{ item.name }}" 
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'hdfs_service', value: 'HDFS' }
+    - { name: 'hive_service', value: 'HIVE' }
+
+- name: Set IMPALA role properties
+  cdh: 
+    action: set_config 
+    entity: role 
+    service: impala 
+    role: impalad 
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'enable_audit_event_log', value: "true" }
+
+- name: Deploy IMPALA services in masters
+  cdh: 
+    action: deploy_base_roles 
+    service: impala
+    host: "{{ groups['cloudera-master'][1] }}" 
+
+- name: Deploy IMPALAD in slaves
+  cdh: 
+    action: deploy_service_worker_nodes 
+    service: impala
+    host: "{{ item }}"
+  with_items: "{{ groups['cloudera-worker'] }}"
+ 
+- name: Create /var/lib/impala and set permissions 
+  file: 
+    path: /var/lib/impala
+    state: directory
+    owner: impala
+    group: hadoop
+    mode: 0755
+  delegate_to: "{{ item }}"
+  with_items: 
+    - "{{ groups['cloudera-master'] }}"
+    - "{{ groups['cloudera-worker'] }}"
+  
+- meta: flush_handlers

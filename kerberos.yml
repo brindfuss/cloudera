@@ -1,0 +1,123 @@
+- name: Debug VAR kdc_host
+  debug: var=kdc_host
+  
+- name: Set KDC management options
+  cdh: 
+    action: set_config 
+    entity: service
+    service: cm 
+    name: "{{ item.name }}" 
+    value: "{{ item.value }}"
+  with_items: 
+    - { name: 'SECURITY_REALM', value: "{{ kdc_realm_name }}" }
+    - { name: 'KDC_HOST', value: "{{ kdc_host }}" }
+    - { name: 'MAX_RENEW_LIFE', value: '5184000' }
+
+- name: Enable KRB on HDFS
+  cdh: 
+    action: set_config 
+    entity: service
+    service: hdfs 
+    name: "{{ item.name }}" 
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'hadoop_security_authentication', value: 'kerberos' }
+    - { name: 'hadoop_security_authorization', value: 'true' }
+
+- name: Enable KEB on HBase
+  cdh: 
+    action: set_config 
+    entity: service 
+    service: hbase 
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'hbase_security_authentication', value: 'kerberos' }
+
+- name: Enable KRB on Zookeeper
+  cdh: 
+    action: set_config 
+    entity: service 
+    service: zookeeper 
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'enableSecurity', value: 'true' }
+
+- name: Set HDFS DN role properties for security
+  cdh: 
+    action: set_config 
+    entity: role 
+    service: hdfs 
+    role: datanode 
+    name: "{{ item.name }}" 
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'dfs_datanode_http_port', value: '1006' }
+    - { name: 'dfs_datanode_port', value: '1004' }
+    - { name: 'dfs_datanode_data_dir_perm', value: '700' }
+
+- name: Check if KRB configuration is imported
+  stat: 
+    path: /etc/krb_config_imported
+  register: krb_config
+
+- debug: var=kdc_admin_principal
+- debug: var=kdc_admin_password
+
+- name: Import kerberos configuration
+  cdh: 
+    action: run_command 
+    service: cm
+    name: importAdminCredentials 
+    params: "{username: {{ kdc_admin_principal }}/admin, password: {{ kdc_admin_password }} }"
+  register: krb_config_cmd
+  when: krb_config.stat.exists == false
+
+- name: Create a file after succesful import
+  file: 
+    path: /etc/krb_config_imported 
+    state: touch
+  when: krb_config_cmd|success and krb_config.stat.exists == false
+
+- name: Check to see if creds generated
+  stat: 
+    path: /etc/krb_creds_generated
+  register: krb_creds
+
+- name: Generate kerberos credentials
+  cdh: 
+    action: run_command 
+    service: cm 
+    name: generateCredentials
+  register: krb_creds_cmd
+  when: krb_creds.stat.exists == false
+
+- name: Create a file after succesful generation
+  file: 
+    path: /etc/krb_creds_generated 
+    state: touch
+  when: krb_creds_cmd|success and krb_creds.stat.exists == false
+
+- name: Deploy HUE KT master components
+  cdh: 
+    action: deploy_base_roles 
+    service: hue-kt 
+    host: "{{ groups['CDH-MN'][2] }}" 
+
+- name: Set HUE role properties for security
+  cdh: 
+    action: set_config 
+    entity: role 
+    service: hue 
+    role: hue-kt 
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items:
+    - { name: 'keytab_reinit_frequency', value: '604800' }
+
+- name: Restart cluster
+  cdh: 
+    action: cluster 
+    state: restarted
+  when: krb_creds_cmd|success and krb_creds.stat.exists == false
