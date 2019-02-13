@@ -1,0 +1,136 @@
+---
+
+- name: Stop and disable firewalld.
+  service:
+    name: firewalld
+    state: stopped
+    enabled: false
+  ignore_errors: yes
+
+- name: Disable SELinux
+  selinux:
+    state: disabled
+  notify: Reboot Server
+
+- name: Set vm.swappiness to 1
+  sysctl:
+    name: vm.swappiness
+    value: 1
+    state: present
+
+- name: Disable transparent huge page defrag
+  lineinfile: 
+    path: /etc/rc.local
+    line: 'echo never > /sys/kernel/mm/transparent_hugepage/defrag'
+    state: present
+
+- name: Disable transparent huge page enabled
+  lineinfile:
+    path: /etc/rc.local
+    line: 'echo never > /sys/kernel/mm/transparent_hugepage/enabled'
+    state: present
+
+- name: Making /etc/rc.d/rc.local executable at boot
+  file: 
+    path: /etc/rc.d/rc.local
+    mode: a+x
+
+- name: Stop and disable chronyd.
+  service:
+    name: chronyd
+    state: stopped
+    enabled: false
+
+- meta: flush_handlers
+
+- name: create /usr/java/ directory if it doesn't exist
+  file:
+    path: /usr/java/
+    owner: root
+    group: root
+    state: directory
+    mode: 0755
+  register: java_dir
+
+- name: Install cifs-utils Package
+  become: true
+  yum:
+    name: cifs-utils
+    state: latest
+
+- name: Create & Add contents to Credentials File
+  blockinfile:
+    dest: /root/wms_app_user_credentials
+    create: yes
+    content: |
+      # Credentials for the Remote Share Access
+
+      username={{ hostvars['localhost']['wms_app_user']['value']['username'] }}
+      password={{ hostvars['localhost']['wms_app_user']['value']['password'] }}
+      domain={{ hostvars['localhost']['wms_app_user']['value']['domain'] }}
+
+- name: Mount the MBApps
+  mount:
+    path: /mnt/mbapps
+    src: //mbapps.reyesholdings.com/MBApps
+    fstype: cifs
+    opts: credentials=/root/wms_app_user_credentials
+    state: mounted
+
+- name: Distribute JDK library
+  unarchive: 
+    src: /mnt/mbapps/3rdParty/java/jdk-8u162-linux-x64.tar.gz
+    dest: /usr/java/
+    remote_src: yes
+  when: java_dir is changed
+
+- name: UnMount the MBApps
+  mount:
+    path: /mnt/mbapps
+    src: //mbapps.reyesholdings.com/MBApps
+    fstype: cifs
+    state: absent
+
+- name: Delete credentials file
+  file:
+    path: /root/wms_app_user_credentials
+    state: absent
+
+- name: set timezone to Chicago
+  timezone:
+    name: America/Chicago
+
+- name: Check if tuned is enabled
+  command: tuned-adm list
+  register: tuned_status
+
+- debug: var=tuned_status.stderr
+
+- name: start tuned
+  service:
+    name: tuned
+    state: started
+  when: tuned_status.stderr == ""
+
+- name: Remove all the tuned list
+  command: tuned-adm off
+  when: tuned_status.stderr == ""
+
+- name: Stop and disable tuned
+  service:
+    name: tuned
+    state: stopped
+    enabled: no   
+  when: tuned_status.stderr == ""   
+
+- name: Set Java home in the profile
+  lineinfile:
+    path: /etc/profile
+    line: 'export JAVA_HOME=/usr/java/jdk1.8.0_162'
+    state: present
+
+- name: Set Java Path in the profile
+  lineinfile:
+    path: /etc/profile
+    line: 'export PATH=$JAVA_HOME/bin:$PATH'
+    state: present

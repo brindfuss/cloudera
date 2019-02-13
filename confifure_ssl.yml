@@ -1,0 +1,161 @@
+---
+
+- name: remove files and directories
+  file:
+    state: absent
+    path: "/opt/cloudera/security"
+  when: ssl_fresh_install|bool == true
+
+- name: Create directories for jks, x509 certs hosts
+  file:
+   path: "{{ item }}"
+   state: directory
+   mode: 0555
+  become: yes
+  with_items:
+    - [ "/opt/cloudera/security/x509/cert","/opt/cloudera/security/CAcerts/root_ca","/opt/cloudera/security/jks/truststore" ]
+
+- name: Create directories for jks, x509 key hosts
+  file:
+   path: "{{ item }}"
+   state: directory
+   mode: 0500
+  become: yes
+  with_items:
+    - [ "/opt/cloudera/security/x509/key","/opt/cloudera/security/jks/keystore" ]
+
+- name: Copy the host cert variable to hostname.cert
+  copy:
+    content: "{{ hostvars['localhost']['cdh_deployment_certs']['value']['cert'] }}"
+    dest: /opt/cloudera/security/x509/cert/{{ inventory_hostname }}.pem
+
+- name: Copy the key variable to hostname.key
+  copy:
+    content: "{{ hostvars['localhost']['cdh_deployment_certs']['value']['private_key'] }}"
+    dest: /opt/cloudera/security/x509/key/host_key_passless.pem
+
+- name: Copy the rootCA cert variable to root ca
+  copy:
+    content: "{{ hostvars['localhost']['cdh_deployment_certs']['value']['ca_cert'] }}"
+    dest: /opt/cloudera/security/CAcerts/root_ca/root_ca_chain.pem
+
+- name: Copy the ldap rootCA cert variable to root ca
+  copy:
+    content: "{{ hostvars['localhost']['cdh_deployment_certs']['value']['ldap_cert'] }}"
+    dest: /opt/cloudera/security/CAcerts/root_ca/ldap_root_ca.pem
+
+- name: Enforce password
+  command: "openssl rsa -in host_key_passless.pem -passout pass:{{ hostvars['localhost']['cdh_deployment_certs']['value']['keystore_password'] }} -out {{ inventory_hostname }}.pem -aes256"
+  args:
+    chdir: /opt/cloudera/security/x509/key
+
+- name: Convert key into PKCS12
+  command: "openssl pkcs12 -export -in x509/cert/{{ inventory_hostname }}.pem -inkey x509/key/{{ inventory_hostname }}.pem -out x509/key/{{ inventory_hostname }}.p12 -name {{ inventory_hostname }} -passin pass:{{ hostvars['localhost']['cdh_deployment_certs']['value']['keystore_password'] }} -passout pass:{{ hostvars['localhost']['cdh_deployment_certs']['value']['keystore_password'] }}"
+  args:
+     chdir: /opt/cloudera/security
+
+- name: Import PKCS12 to Java keystore
+  shell: "/usr/java/jdk1.8.0_162/bin/keytool -importkeystore -srckeystore x509/key/{{ inventory_hostname }}.p12 -srcstoretype PKCS12 -srcstorepass {{ hostvars['localhost']['cdh_deployment_certs']['value']['keystore_password'] }} -alias {{ inventory_hostname }} -deststorepass {{ hostvars['localhost']['cdh_deployment_certs']['value']['keystore_password'] }} -destkeypass {{ hostvars['localhost']['cdh_deployment_certs']['value']['keystore_password'] }} -destkeystore jks/keystore/{{ inventory_hostname }}.jks"
+  args:
+     chdir: /opt/cloudera/security
+  ignore_errors: yes
+
+- name: Import rootCA to truststore
+  shell: "/usr/java/jdk1.8.0_162/bin/keytool -importcert -file /opt/cloudera/security/CAcerts/root_ca/root_ca_chain.pem -noprompt -alias CAcert -keystore /opt/cloudera/security/jks/truststore/host_truststore.jks -storepass {{ hostvars['localhost']['cdh_deployment_certs']['value']['truststore_password'] }}"
+  ignore_errors: yes
+
+- name: Import LdaprootCA to truststore
+  shell: "/usr/java/jdk1.8.0_162/bin/keytool -importcert -file /opt/cloudera/security/CAcerts/root_ca/ldap_root_ca.pem -noprompt -alias ldapCAcert -keystore /opt/cloudera/security/jks/truststore/host_truststore.jks -storepass {{ hostvars['localhost']['cdh_deployment_certs']['value']['truststore_password'] }}"
+  ignore_errors: yes
+
+- name: Create java keystore symlink
+  file:
+    src: /opt/cloudera/security/jks/keystore/{{ inventory_hostname }}.jks
+    dest: /opt/cloudera/security/jks/keystore/host_keystore.jks
+    state: link
+
+- name: Create x509 host key symlink
+  file:
+    src: /opt/cloudera/security/x509/key/{{ inventory_hostname }}.pem
+    dest: /opt/cloudera/security/x509/key/host_key.pem
+    state: link
+
+- name: Create x509 host cert symlink
+  file:
+    src: /opt/cloudera/security/x509/cert/{{ inventory_hostname }}.pem
+    dest: /opt/cloudera/security/x509/cert/host_cert.pem
+    state: link
+
+- name: shell
+  command: sudo openssl x509 -hash -noout -in root_ca_chain.pem
+  args:
+    chdir: "/opt/cloudera/security/CAcerts/root_ca"
+  register: ca_hash
+
+- name: test symlink
+  file:
+    src: /opt/cloudera/security/CAcerts/root_ca/root_ca_chain.pem
+    dest: /opt/cloudera/security/CAcerts/root_ca/{{ ca_hash.stdout }}.0
+    state: link
+
+- name: distribute Jsse Certs
+  copy:
+    src: /usr/java/jdk1.8.0_162/jre/lib/security/cacerts
+    dest: /usr/java/jdk1.8.0_162/jre/lib/security/jssecacerts
+    force: yes
+    remote_src: yes
+    mode: 0444
+
+- name: Import rootCA to java default truststore
+  shell: "/usr/java/jdk1.8.0_162/bin/keytool -importcert -file /opt/cloudera/security/CAcerts/root_ca/root_ca_chain.pem -noprompt -alias CAcert -keystore /usr/java/jdk1.8.0_162/jre/lib/security/jssecacerts -storepass changeit"
+  ignore_errors: yes
+
+- name: Import rootCA to java default truststore
+  shell: "/usr/java/jdk1.8.0_162/bin/keytool -importcert -file /opt/cloudera/security/CAcerts/root_ca/ldap_root_ca.pem -noprompt -alias LdapCAcert -keystore /usr/java/jdk1.8.0_162/jre/lib/security/jssecacerts -storepass changeit"
+  ignore_errors: yes
+
+- name: Import hostcert to truststore
+  shell: "/usr/java/jdk1.8.0_162/bin/keytool -importcert -file /opt/cloudera/security/x509/cert/host_cert.pem -noprompt -alias {{ inventory_hostname }} -keystore /opt/cloudera/security/jks/truststore/host_truststore.jks -storepass {{ hostvars['localhost']['cdh_deployment_certs']['value']['truststore_password'] }}"
+  ignore_errors: yes
+
+- name: Add certs to tls ca bundle
+  blockinfile:
+    path: /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+    block: |
+      {{ item }}
+    marker: "# {mark} ANSIBLE MANAGED BLOCK -->"
+  with_items:
+    - "{{ hostvars['localhost']['cdh_deployment_certs']['value']['ca_cert'] }}"
+    - "{{ hostvars['localhost']['cdh_deployment_certs']['value']['ldap_cert'] }}"
+
+- name: Find if clodera agent is installed by checking the directory
+  stat:
+    path: "/etc/cloudera-scm-agent/config.ini"
+  register: cloudera_agent_path
+
+- name: Configure config ini
+  copy:
+    src: config.ini
+    dest: /etc/cloudera-scm-agent/config.ini
+  when: cloudera_agent_path.stat.exists
+  notify: restart cloudera agent
+
+- name: Copy the key password variable to agentkey
+  copy:
+    content: "{{ hostvars['localhost']['cdh_deployment_certs']['value']['keystore_password'] }}"
+    dest: /etc/cloudera-scm-agent/agentkey.pw
+    mode: 0400
+  when: cloudera_agent_path.stat.exists
+
+- name: Grant Hadoop users read only access to a key and keystore
+  acl:
+    path: "{{ item[0] }}"
+    entity: "{{ item[1] }}"
+    etype: user
+    permissions: r-X
+    state: present
+    recursive: yes
+  with_nested:
+    - [ '/opt/cloudera/security/x509/key','/opt/cloudera/security/jks/keystore' ]
+    - [ 'cloudera-scm','flume','hbase','hdfs','hive','httpfs','hue','impala','kms','llama','mapred','oozie','solr','spark','sqoop','sqoop2','yarn','zookeeper','keytrustee' ]
+  failed_when: false

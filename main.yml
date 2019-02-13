@@ -1,0 +1,32 @@
+---
+
+- name: Check and configure Authentications and Identity
+  include_tasks: configure_identity_auth.yml
+  become: true
+  tags:
+    - auth_identity_setup
+
+- name: Check and configure CDH prerequisites
+  include_tasks: configure_cdh_prereq.yml
+  become: true
+  tags:
+    - cdh_pre_req_setup
+
+- name: Mount Devices to CDH Instances
+  include_tasks: configure_cdh_mount.yml mount_device_lun={{ item.device_lun }} mount_point={{ item.mount_name }}
+  become: true
+  with_items:
+      - "{{ mount_conf }}"
+  tags:
+     - cdh_mounting_setup
+
+- name: Copy the etc hosts file
+  include_tasks: copyetchosts.yml
+  tags:
+    - copyetchostsfile
+
+- name: Configure SSL on all the hosts
+  include_tasks: configure_ssl.yml
+  become: true
+  tags:
+    - cdh_ssl_setup
