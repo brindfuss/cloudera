@@ -58,70 +58,9 @@
     name: cifs-utils
     state: latest
 
-- name: Create & Add contents to Credentials File
-  blockinfile:
-    dest: /root/wms_app_user_credentials
-    create: yes
-    content: |
-      # Credentials for the Remote Share Access
-
-      username={{ hostvars['localhost']['wms_app_user']['value']['username'] }}
-      password={{ hostvars['localhost']['wms_app_user']['value']['password'] }}
-      domain={{ hostvars['localhost']['wms_app_user']['value']['domain'] }}
-
-- name: Mount the MBApps
-  mount:
-    path: /mnt/mbapps
-    src: //mbapps.reyesholdings.com/MBApps
-    fstype: cifs
-    opts: credentials=/root/wms_app_user_credentials
-    state: mounted
-
-- name: Distribute JDK library
-  unarchive: 
-    src: /mnt/mbapps/3rdParty/java/jdk-8u162-linux-x64.tar.gz
-    dest: /usr/java/
-    remote_src: yes
-  when: java_dir is changed
-
-- name: UnMount the MBApps
-  mount:
-    path: /mnt/mbapps
-    src: //mbapps.reyesholdings.com/MBApps
-    fstype: cifs
-    state: absent
-
-- name: Delete credentials file
-  file:
-    path: /root/wms_app_user_credentials
-    state: absent
-
-- name: set timezone to Chicago
-  timezone:
-    name: America/Chicago
-
 - name: Check if tuned is enabled
   command: tuned-adm list
   register: tuned_status
-
-- debug: var=tuned_status.stderr
-
-- name: start tuned
-  service:
-    name: tuned
-    state: started
-  when: tuned_status.stderr == ""
-
-- name: Remove all the tuned list
-  command: tuned-adm off
-  when: tuned_status.stderr == ""
-
-- name: Stop and disable tuned
-  service:
-    name: tuned
-    state: stopped
-    enabled: no   
-  when: tuned_status.stderr == ""   
 
 - name: Set Java home in the profile
   lineinfile:
