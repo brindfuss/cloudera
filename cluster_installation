@@ -14,6 +14,11 @@ Download CDH 6.0.1
     2) wget --recursive --no-parent --no-host-directories https://archive.cloudera.com/gplextras6/6.0.1/redhat7/ -P /var/www/html/cloudera-repos
     3) chmod -R ugo+rX /var/www/html/cloudera-repos/cdh6
     4) chmod -R ugo+rX /var/www/html/cloudera-repos/gplextras6
+Parcles Installation:
+    1) wget --recursive --no-parent --no-host-directories https://archive.cloudera.com/cdh6/6.0.1/parcels/ -P /var/www/html/cloudera-repos
+    2) wget --recursive --no-parent --no-host-directories https://archive.cloudera.com/gplextras6/6.0.1/parcels/ -P /var/www/html/cloudera-repos
+    3) chmod -R ugo+rX /var/www/html/cloudera-repos/cdh6
+    4) chmod -R ugo+rX /var/www/html/cloudera-repos/gplextras6
 Create cloudera-manager.repo file under /etc/yum.repos.d/
      1) touch cloudera-manager.repo
  Paste the below contents to cloudera-manager.repo
