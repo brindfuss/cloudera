@@ -31,6 +31,9 @@ Create cloudera-manager.repo file under /etc/yum.repos.d/
       autorefresh=0
       type=rpm-md
  Installing cloudera manager
+      first install oracle jdk
+         yum list all | grep cloudera
+         yum -y install oracle-j2sdk1.8.x86_64
       yum -y install cloudera-manager-server
  Install Mariadb(mysql) 
       yum -y install mariadb-server
