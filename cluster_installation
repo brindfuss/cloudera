@@ -32,3 +32,14 @@ Create cloudera-manager.repo file under /etc/yum.repos.d/
       type=rpm-md
  Installing cloudera manager
       yum -y install cloudera-manager-server
+ Install Mariadb(mysql) 
+      yum -y install mariadb-server
+      /usr/bin/mysql_secure_installation
+      sudo systemctl enable mariadb
+      sudo systemctl start mariadb
+    mysql -u root -p
+    create database scm;
+    GRANT ALL ON scm.* TO 'scm'@'%' IDENTIFIED BY 'scm';
+    /opt/cloudera/cm/schema/scm_prepare_database.sh mysql scm scm scm
+ start cloudera manager server
+     systemctl start cloudera-scm-server
