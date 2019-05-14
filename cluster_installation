@@ -30,6 +30,8 @@ Create cloudera-manager.repo file under /etc/yum.repos.d/
       enabled=1
       autorefresh=0
       type=rpm-md
+  Vm.swapiness to 1:
+     sysctl -w vm.swappiness=1
  Installing cloudera manager
       first install oracle jdk
          yum list all | grep cloudera
