@@ -1,0 +1,9 @@
+yum -y install wget
+wget https://archive.cloudera.com/cm7/7.0.3/cloudera-manager-installer.bin
+chmod u+x cloudera-manager-installer.bin
+./cloudera-manager-installer.bin
+ls /usr/share/cmf/uninstall-cloudera-manager.sh
+sudo ./cloudera-manager-installer.bin
+cat /etc/selinux/config
+vi /etc/selinux/config
+sudo ./cloudera-manager-installer.bin
