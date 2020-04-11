@@ -53,7 +53,8 @@ Create cloudera-manager.repo file under /etc/yum.repos.d/
    yum -y install oracle-j2sdk1.8.x86_64
    /usr/bin/mysql_secure_installation
    mysql -u root -p
-   /opt/cloudera/cm/schema/scm_prepare_database.sh mysql scm scm scm
+   create database scm;
+   GRANT ALL ON scm.* TO 'scm'@'%' IDENTIFIED BY 'scm';
    yum -y install cloudera-manager-server
    /opt/cloudera/cm/schema/scm_prepare_database.sh mysql scm scm scm
    systemctl start cloudera-scm-server
@@ -61,5 +62,11 @@ Create cloudera-manager.repo file under /etc/yum.repos.d/
    systemctl start cloudera-scm-agent
 4)Install CDH using Cloudera Manager
     loginto CM server > select license> provide parcels dir > proceed to installation as 'ec2-user' and pem file as passwd.
-5)
+5)Add a new node to an existing cluster
+     loginto CM server > click on hosts > select add hosts to cluster > specify hostnames > specify repository > Accept license
+     > provide credentials > install agents > finish
+6)Add a service using Cloudera Manager
+     Select add service from the drop down next to cluster name > select yarn service > select hosts for RM,NM,HS
+     Review changes and install service.
+
      
