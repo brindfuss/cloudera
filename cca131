@@ -1,3 +1,5 @@
+Install:
+Demonstrate an understanding of the installation process for Cloudera Manager, CDH, and the ecosystem projects.
 1)Set up a local CDH repository
    Steps for configuring local repository
    install wget: yum -y install wget 
@@ -68,5 +70,7 @@ Create cloudera-manager.repo file under /etc/yum.repos.d/
 6)Add a service using Cloudera Manager
      Select add service from the drop down next to cluster name > select yarn service > select hosts for RM,NM,HS
      Review changes and install service.
+Configure:
+Perform basic and advanced configuration needed to effectively administer a Hadoop cluster
 
      
